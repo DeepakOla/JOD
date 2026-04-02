@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Warp Lines - Abstract Strategy Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        #game-container {
+            background: #2c3e50;
+            border-radius: 15px;
+            box-shadow: 0 10px 50px rgba(0, 0, 0, 0.5);
+            padding: 20px;
+            max-width: 900px;
+            width: 95%;
+        }
+
+        #status-bar {
+            background: #34495e;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            text-align: center;
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+
+        #game-canvas {
+            display: block;
+            margin: 0 auto;
+            background: #1a252f;
+            border-radius: 10px;
+            cursor: pointer;
+            touch-action: none;
+        }
+
+        #controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: bold;
+        }
+
+        .btn:hover {
+            background: #2980b9;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: #95a5a6;
+        }
+
+        .btn-secondary:hover {
+            background: #7f8c8d;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #34495e;
+            color: #ecf0f1;
+            padding: 30px;
+            border-radius: 15px;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-content h2 {
+            color: #3498db;
+            margin-bottom: 20px;
+        }
+
+        .modal-content p, .modal-content ul {
+            margin-bottom: 15px;
+            line-height: 1.6;
+        }
+
+        .modal-content ul {
+            padding-left: 20px;
+        }
+
+        .close-modal {
+            margin-top: 20px;
+        }
+
+        #win-message {
+            font-size: 2em;
+            color: #f39c12;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            #game-container {
+                padding: 10px;
+            }
+
+            #status-bar {
+                font-size: 1em;
+                padding: 10px;
+            }
+
+            .btn {
+                padding: 10px 20px;
+                font-size: 0.9em;
+            }
+
+            .modal-content {
+                padding: 20px;
+                margin: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="status-bar">Red's Turn</div>
+        <canvas id="game-canvas" width="800" height="700"></canvas>
+        <div id="controls">
+            <button class="btn" onclick="newGame()">New Game</button>
+            <button class="btn btn-secondary" onclick="toggleMode()">Mode: PvP</button>
+            <button class="btn btn-secondary" onclick="showRules()">Rules</button>
+        </div>
+    </div>
+
+    <div id="rules-modal" class="modal">
+        <div class="modal-content">
+            <h2>Warp Lines - Game Rules</h2>
+            <h3>Objective</h3>
+            <p>Eliminate all opponent pieces or block them so they cannot move.</p>
+
+            <h3>Setup</h3>
+            <ul>
+                <li>Red starts at the top with 13 pieces</li>
+                <li>Green starts at the bottom with 13 pieces</li>
+                <li>Center position (E2) starts empty</li>
+            </ul>
+
+            <h3>How to Play</h3>
+            <p><strong>Turn Structure:</strong></p>
+            <ul>
+                <li>Players alternate turns, Red goes first</li>
+                <li>Click your piece to select it, then click where to move</li>
+                <li>Each turn you must make exactly one move</li>
+            </ul>
+
+            <p><strong>Normal Move (Step):</strong></p>
+            <ul>
+                <li>Move your piece to an adjacent empty node</li>
+                <li>You can only move along the lines you see on the board</li>
+            </ul>
+
+            <p><strong>Capture Move (Jump):</strong></p>
+            <ul>
+                <li>Jump over an enemy piece to an empty space beyond it</li>
+                <li>The jumped piece is removed from the game</li>
+                <li>If you can capture again after landing, you MUST continue jumping</li>
+                <li>You can change direction between jumps</li>
+            </ul>
+
+            <p><strong>⚠️ IMPORTANT: Mandatory Capture Rule</strong></p>
+            <ul>
+                <li>If ANY of your pieces can capture, you MUST make a capture</li>
+                <li>You cannot make a normal step when a capture is available</li>
+            </ul>
+
+            <h3>Winning</h3>
+            <ul>
+                <li>Win by eliminating all enemy pieces</li>
+                <li>Win if opponent has no legal moves</li>
+            </ul>
+
+            <h3>Game Modes</h3>
+            <ul>
+                <li><strong>PvP:</strong> Two players on same device</li>
+                <li><strong>PvC:</strong> Play against computer</li>
+            </ul>
+
+            <button class="btn close-modal" onclick="closeModal('rules-modal')">Got It!</button>
+        </div>
+    </div>
+
+    <div id="win-modal" class="modal">
+        <div class="modal-content">
+            <div id="win-message">Red Wins!</div>
+            <p style="text-align: center; font-size: 1.2em;">Congratulations!</p>
+            <button class="btn close-modal" onclick="closeModal('win-modal'); newGame();">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        // ========================================
+        // CONFIGURATION & CONSTANTS
+        // ========================================
+
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+
+        const COLORS = {
+            background: '#1a252f',
+            edge: '#ecf0f1',
+            node: 'rgba(236, 240, 241, 0.2)',
+            red: '#e74c3c',
+            green: '#2ecc71',
+            selectedGlow: '#f39c12',
+            captureGlow: '#e67e22',
+            stepGlow: '#27ae60'
+        };
+
+        const NODE_RADIUS = 15;
+        const PIECE_RADIUS = 20;
+        const HIGHLIGHT_RADIUS = 25;
+
+        // ========================================
+        // BOARD TOPOLOGY - FIXED GRAPH STRUCTURE
+        // ========================================
+
+        const neighbors = {
+            // Row 1
+            "A1": ["A2", "B1", "E1"],
+            "A2": ["A1", "A3", "B2"],
+            "A3": ["A2", "B3", "E3"],
+            // Row 2
+            "B1": ["A1", "B2", "C1"],
+            "B2": ["A2", "B1", "B3", "C2"],
+            "B3": ["A3", "B2", "C3"],
+            // Row 3
+            "C1": ["B1", "C2", "D1"],
+            "C2": ["B2", "C1", "C3", "D2"],
+            "C3": ["B3", "C2", "D3"],
+            // Row 4
+            "D1": ["C1", "D2", "E2"],
+            "D2": ["C2", "D1", "D3", "E2"],
+            "D3": ["C3", "D2", "E2"],
+            // Row 5 (center)
+            "E1": ["A1", "E2", "I1"],
+            "E2": ["D1", "D2", "D3", "E1", "E3", "F1", "F2", "F3"],
+            "E3": ["A3", "E2", "I3"],
+            // Row 6
+            "F1": ["E2", "F2", "G1"],
+            "F2": ["E2", "F1", "F3", "G2"],
+            "F3": ["E2", "F2", "G3"],
+            // Row 7
+            "G1": ["F1", "G2", "H1"],
+            "G2": ["F2", "G1", "G3", "H2"],
+            "G3": ["F3", "G2", "H3"],
+            // Row 8
+            "H1": ["G1", "H2", "I1"],
+            "H2": ["G2", "H1", "H3", "I2"],
+            "H3": ["G3", "H2", "I3"],
+            // Row 9
+            "I1": ["E1", "H1", "I2"],
+            "I2": ["H2", "I1", "I3"],
+            "I3": ["E3", "H3", "I2"]
+        };
+
+        // Node positions on canvas (warped quadrilateral layout)
+        const nodePositions = {
+            "A1": {x: 150, y: 50},   "A2": {x: 400, y: 50},   "A3": {x: 650, y: 50},
+            "B1": {x: 170, y: 120},  "B2": {x: 400, y: 120},  "B3": {x: 630, y: 120},
+            "C1": {x: 190, y: 190},  "C2": {x: 400, y: 190},  "C3": {x: 610, y: 190},
+            "D1": {x: 210, y: 260},  "D2": {x: 400, y: 260},  "D3": {x: 590, y: 260},
+            "E1": {x: 230, y: 330},  "E2": {x: 400, y: 330},  "E3": {x: 570, y: 330},
+            "F1": {x: 210, y: 400},  "F2": {x: 400, y: 400},  "F3": {x: 590, y: 400},
+            "G1": {x: 190, y: 470},  "G2": {x: 400, y: 470},  "G3": {x: 610, y: 470},
+            "H1": {x: 170, y: 540},  "H2": {x: 400, y: 540},  "H3": {x: 630, y: 540},
+            "I1": {x: 150, y: 610},  "I2": {x: 400, y: 610},  "I3": {x: 650, y: 610}
+        };
+
+        // ========================================
+        // GAME STATE
+        // ========================================
+
+        let gameState = {
+            board: {},
+            currentPlayer: 'red',
+            selectedPiece: null,
+            validMoves: [],
+            mode: 'pvp', // 'pvp' or 'pvc'
+            gameOver: false,
+            winner: null,
+            mustCapture: false,
+            animating: false
+        };
+
+        // ========================================
+        // INITIALIZATION
+        // ========================================
+
+        function initGame() {
+            // Initialize empty board
+            for (let node in neighbors) {
+                gameState.board[node] = null;
+            }
+
+            // Place red pieces (top 13 nodes + E1)
+            const redStart = ['A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'D1', 'D2', 'D3', 'E1'];
+            redStart.forEach(node => gameState.board[node] = 'red');
+
+            // Place green pieces (bottom 13 nodes + E3)
+            const greenStart = ['F1', 'F2', 'F3', 'G1', 'G2', 'G3', 'H1', 'H2', 'H3', 'I1', 'I2', 'I3', 'E3'];
+            greenStart.forEach(node => gameState.board[node] = 'green');
+
+            // E2 (center) starts empty - already null
+
+            gameState.currentPlayer = 'red';
+            gameState.selectedPiece = null;
+            gameState.validMoves = [];
+            gameState.gameOver = false;
+            gameState.winner = null;
+            gameState.animating = false;
+
+            updateMustCaptureFlag();
+            drawBoard();
+            updateStatus();
+        }
+
+        function newGame() {
+            initGame();
+        }
+
+        // ========================================
+        // UTILITY FUNCTIONS
+        // ========================================
+
+        function getPieceAt(nodeId) {
+            return gameState.board[nodeId];
+        }
+
+        function setPieceAt(nodeId, color) {
+            gameState.board[nodeId] = color;
+        }
+
+        function getOpponent(player) {
+            return player === 'red' ? 'green' : 'red';
+        }
+
+        function countPieces(player) {
+            let count = 0;
+            for (let node in gameState.board) {
+                if (gameState.board[node] === player) count++;
+            }
+            return count;
+        }
+
+        // ========================================
+        // MOVE GENERATION
+        // ========================================
+
+        function getStepMoves(nodeId) {
+            const moves = [];
+            const adjacentNodes = neighbors[nodeId];
+
+            for (let neighbor of adjacentNodes) {
+                if (getPieceAt(neighbor) === null) {
+                    moves.push({
+                        from: nodeId,
+                        to: neighbor,
+                        type: 'step',
+                        captured: []
+                    });
+                }
+            }
+
+            return moves;
+        }
+
+        function getCaptureMovesForPiece(nodeId, player) {
+            const captureMoves = [];
+            findCaptureSequences(nodeId, player, [], new Set(), [nodeId], captureMoves);
+            return captureMoves;
+        }
+
+        function findCaptureSequences(currentNode, player, capturedSoFar, capturedSet, path, allMoves) {
+            const opponent = getOpponent(player);
+            const adjacentNodes = neighbors[currentNode];
+            let foundCapture = false;
+
+            for (let middleNode of adjacentNodes) {
+                // Check if middle node has enemy piece
+                if (getPieceAt(middleNode) !== opponent) continue;
+                if (capturedSet.has(middleNode)) continue; // Already captured in this sequence
+
+                // Check for valid landing node
+                const beyondNodes = neighbors[middleNode];
+                for (let landingNode of beyondNodes) {
+                    if (landingNode === currentNode) continue; // Can't jump back
+                    if (getPieceAt(landingNode) !== null) continue; // Landing must be empty
+                    if (path.includes(landingNode)) continue; // Can't revisit in same sequence
+
+                    // Valid capture found
+                    foundCapture = true;
+                    const newCaptured = [...capturedSoFar, middleNode];
+                    const newCapturedSet = new Set([...capturedSet, middleNode]);
+                    const newPath = [...path, landingNode];
+
+                    // Recursively find further captures from landing node
+                    findCaptureSequences(landingNode, player, newCaptured, newCapturedSet, newPath, allMoves);
+                }
+            }
+
+            // If no further captures, this is a complete sequence (if we've captured at least one)
+            if (!foundCapture && capturedSoFar.length > 0) {
+                allMoves.push({
+                    from: path[0],
+                    to: currentNode,
+                    type: 'capture',
+                    captured: capturedSoFar,
+                    path: path
+                });
+            }
+        }
+
+        function getLegalMovesForPiece(nodeId) {
+            const piece = getPieceAt(nodeId);
+            if (piece !== gameState.currentPlayer) return [];
+
+            const captureMoves = getCaptureMovesForPiece(nodeId, piece);
+
+            if (gameState.mustCapture) {
+                return captureMoves;
+            } else {
+                const stepMoves = getStepMoves(nodeId);
+                return [...captureMoves, ...stepMoves];
+            }
+        }
+
+        function getAllLegalMoves(player) {
+            const allMoves = [];
+
+            for (let node in gameState.board) {
+                if (gameState.board[node] === player) {
+                    const moves = getLegalMovesForPiece(node);
+                    allMoves.push(...moves);
+                }
+            }
+
+            return allMoves;
+        }
+
+        function updateMustCaptureFlag() {
+            // Check if any piece of current player can capture
+            let hasCapture = false;
+
+            for (let node in gameState.board) {
+                if (gameState.board[node] === gameState.currentPlayer) {
+                    const captures = getCaptureMovesForPiece(node, gameState.currentPlayer);
+                    if (captures.length > 0) {
+                        hasCapture = true;
+                        break;
+                    }
+                }
+            }
+
+            gameState.mustCapture = hasCapture;
+        }
+
+        // ========================================
+        // MOVE EXECUTION
+        // ========================================
+
+        function executeMove(move) {
+            if (gameState.animating) return;
+
+            gameState.animating = true;
+
+            // Animate the move
+            if (move.type === 'capture' && move.path) {
+                animateCaptureSequence(move, () => {
+                    finishMove();
+                });
+            } else {
+                animateSimpleMove(move.from, move.to, () => {
+                    finishMove();
+                });
+            }
+        }
+
+        function finishMove() {
+            gameState.animating = false;
+            gameState.selectedPiece = null;
+            gameState.validMoves = [];
+
+            // Check win conditions
+            const opponent = getOpponent(gameState.currentPlayer);
+
+            // Check if opponent has no pieces
+            if (countPieces(opponent) === 0) {
+                endGame(gameState.currentPlayer);
+                return;
+            }
+
+            // Switch turn
+            gameState.currentPlayer = opponent;
+            updateMustCaptureFlag();
+
+            // Check if current player has no legal moves
+            const legalMoves = getAllLegalMoves(gameState.currentPlayer);
+            if (legalMoves.length === 0) {
+                endGame(getOpponent(gameState.currentPlayer));
+                return;
+            }
+
+            drawBoard();
+            updateStatus();
+
+            // Trigger AI if it's computer's turn
+            if (gameState.mode === 'pvc' && gameState.currentPlayer === 'green') {
+                setTimeout(aiMove, 500);
+            }
+        }
+
+        // ========================================
+        // ANIMATION
+        // ========================================
+
+        function animateSimpleMove(from, to, callback) {
+            const startPos = nodePositions[from];
+            const endPos = nodePositions[to];
+            const piece = getPieceAt(from);
+
+            setPieceAt(from, null);
+
+            const duration = 300;
+            const startTime = Date.now();
+
+            function animate() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+
+                const currentX = startPos.x + (endPos.x - startPos.x) * progress;
+                const currentY = startPos.y + (endPos.y - startPos.y) * progress;
+
+                drawBoard();
+                drawPieceAt(currentX, currentY, piece);
+
+                if (progress < 1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    setPieceAt(to, piece);
+                    drawBoard();
+                    if (callback) callback();
+                }
+            }
+
+            animate();
+        }
+
+        function animateCaptureSequence(move, callback) {
+            const path = move.path;
+            const captured = move.captured;
+            const piece = getPieceAt(move.from);
+            let pathIndex = 0;
+            let capturedIndex = 0;
+
+            function animateNextJump() {
+                if (pathIndex >= path.length - 1) {
+                    if (callback) callback();
+                    return;
+                }
+
+                const from = path[pathIndex];
+                const to = path[pathIndex + 1];
+
+                // Remove captured piece between from and to
+                if (capturedIndex < captured.length) {
+                    setPieceAt(captured[capturedIndex], null);
+                    capturedIndex++;
+                }
+
+                animateSimpleMove(from, to, () => {
+                    pathIndex++;
+                    animateNextJump();
+                });
+            }
+
+            animateNextJump();
+        }
+
+        // ========================================
+        // AI IMPLEMENTATION
+        // ========================================
+
+        function aiMove() {
+            if (gameState.gameOver || gameState.animating) return;
+            if (gameState.currentPlayer !== 'green') return;
+
+            const allMoves = getAllLegalMoves('green');
+            if (allMoves.length === 0) return;
+
+            // Score each move
+            const scoredMoves = allMoves.map(move => ({
+                move: move,
+                score: evaluateMove(move, 'green')
+            }));
+
+            // Sort by score (highest first)
+            scoredMoves.sort((a, b) => b.score - a.score);
+
+            // Pick best move
+            const bestMove = scoredMoves[0].move;
+            executeMove(bestMove);
+        }
+
+        function evaluateMove(move, player) {
+            let score = 0;
+
+            // Strongly prefer captures
+            if (move.type === 'capture') {
+                score += move.captured.length * 1000;
+            }
+
+            // Simulate the move
+            const originalBoard = {...gameState.board};
+            const opponent = getOpponent(player);
+
+            // Apply move temporarily
+            if (move.type === 'capture') {
+                setPieceAt(move.from, null);
+                setPieceAt(move.to, player);
+                move.captured.forEach(node => setPieceAt(node, null));
+            } else {
+                setPieceAt(move.from, null);
+                setPieceAt(move.to, player);
+            }
+
+            // Evaluate position
+            // 1. Piece count advantage
+            score += (countPieces(player) - countPieces(opponent)) * 100;
+
+            // 2. Mobility (more moves = better)
+            const myMobility = getAllLegalMoves(player).length;
+            const oppMobility = getAllLegalMoves(opponent).length;
+            score += (myMobility - oppMobility) * 10;
+
+            // 3. Control center (E2)
+            if (move.to === 'E2') {
+                score += 50;
+            }
+
+            // 4. Proximity to center (closer is better)
+            const centerPos = nodePositions['E2'];
+            const toPos = nodePositions[move.to];
+            const distToCenter = Math.sqrt(
+                Math.pow(toPos.x - centerPos.x, 2) +
+                Math.pow(toPos.y - centerPos.y, 2)
+            );
+            score -= distToCenter * 0.1;
+
+            // Restore board
+            gameState.board = originalBoard;
+
+            return score;
+        }
+
+        // ========================================
+        // RENDERING
+        // ========================================
+
+        function drawBoard() {
+            // Clear canvas
+            ctx.fillStyle = COLORS.background;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw edges
+            ctx.strokeStyle = COLORS.edge;
+            ctx.lineWidth = 2;
+
+            for (let nodeId in neighbors) {
+                const pos1 = nodePositions[nodeId];
+                const adjacentNodes = neighbors[nodeId];
+
+                for (let neighborId of adjacentNodes) {
+                    const pos2 = nodePositions[neighborId];
+
+                    // Draw each edge only once (check if nodeId < neighborId)
+                    if (nodeId < neighborId) {
+                        ctx.beginPath();
+                        ctx.moveTo(pos1.x, pos1.y);
+                        ctx.lineTo(pos2.x, pos2.y);
+                        ctx.stroke();
+                    }
+                }
+            }
+
+            // Draw nodes
+            for (let nodeId in nodePositions) {
+                const pos = nodePositions[nodeId];
+                ctx.fillStyle = COLORS.node;
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, NODE_RADIUS, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Highlight valid moves
+            if (gameState.selectedPiece && gameState.validMoves.length > 0) {
+                gameState.validMoves.forEach(move => {
+                    const pos = nodePositions[move.to];
+                    const glowColor = move.type === 'capture' ? COLORS.captureGlow : COLORS.stepGlow;
+
+                    ctx.fillStyle = glowColor + '40';
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, HIGHLIGHT_RADIUS, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.strokeStyle = glowColor;
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, HIGHLIGHT_RADIUS, 0, Math.PI * 2);
+                    ctx.stroke();
+                });
+            }
+
+            // Highlight selected piece
+            if (gameState.selectedPiece) {
+                const pos = nodePositions[gameState.selectedPiece];
+                ctx.strokeStyle = COLORS.selectedGlow;
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, PIECE_RADIUS + 5, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // Draw pieces
+            for (let nodeId in gameState.board) {
+                const piece = gameState.board[nodeId];
+                if (piece) {
+                    const pos = nodePositions[nodeId];
+                    drawPieceAt(pos.x, pos.y, piece);
+                }
+            }
+        }
+
+        function drawPieceAt(x, y, color) {
+            const pieceColor = color === 'red' ? COLORS.red : COLORS.green;
+
+            // Create gradient for 3D effect
+            const gradient = ctx.createRadialGradient(
+                x - PIECE_RADIUS * 0.3, y - PIECE_RADIUS * 0.3, PIECE_RADIUS * 0.1,
+                x, y, PIECE_RADIUS
+            );
+
+            if (color === 'red') {
+                gradient.addColorStop(0, '#ff6b6b');
+                gradient.addColorStop(1, '#c0392b');
+            } else {
+                gradient.addColorStop(0, '#55efc4');
+                gradient.addColorStop(1, '#00b894');
+            }
+
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(x, y, PIECE_RADIUS, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Add border
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // ========================================
+        // INPUT HANDLING
+        // ========================================
+
+        function getCanvasCoordinates(event) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+
+            let clientX, clientY;
+
+            if (event.touches && event.touches.length > 0) {
+                clientX = event.touches[0].clientX;
+                clientY = event.touches[0].clientY;
+            } else {
+                clientX = event.clientX;
+                clientY = event.clientY;
+            }
+
+            return {
+                x: (clientX - rect.left) * scaleX,
+                y: (clientY - rect.top) * scaleY
+            };
+        }
+
+        function getNodeAtPosition(x, y) {
+            const threshold = PIECE_RADIUS + 10;
+
+            for (let nodeId in nodePositions) {
+                const pos = nodePositions[nodeId];
+                const dist = Math.sqrt(Math.pow(x - pos.x, 2) + Math.pow(y - pos.y, 2));
+                if (dist < threshold) {
+                    return nodeId;
+                }
+            }
+
+            return null;
+        }
+
+        function handleCanvasClick(event) {
+            event.preventDefault();
+
+            if (gameState.gameOver || gameState.animating) return;
+            if (gameState.mode === 'pvc' && gameState.currentPlayer === 'green') return;
+
+            const coords = getCanvasCoordinates(event);
+            const nodeId = getNodeAtPosition(coords.x, coords.y);
+
+            if (!nodeId) return;
+
+            const piece = getPieceAt(nodeId);
+
+            if (gameState.selectedPiece === null) {
+                // Try to select a piece
+                if (piece === gameState.currentPlayer) {
+                    const moves = getLegalMovesForPiece(nodeId);
+                    if (moves.length > 0) {
+                        gameState.selectedPiece = nodeId;
+                        gameState.validMoves = moves;
+                        drawBoard();
+                        updateStatus('Click a highlighted node to move');
+                    } else {
+                        updateStatus('This piece has no legal moves!');
+                    }
+                }
+            } else {
+                // Check if clicked node is a valid move
+                const validMove = gameState.validMoves.find(m => m.to === nodeId);
+
+                if (validMove) {
+                    executeMove(validMove);
+                } else if (piece === gameState.currentPlayer) {
+                    // Select different piece
+                    const moves = getLegalMovesForPiece(nodeId);
+                    if (moves.length > 0) {
+                        gameState.selectedPiece = nodeId;
+                        gameState.validMoves = moves;
+                        drawBoard();
+                    } else {
+                        updateStatus('This piece has no legal moves!');
+                    }
+                } else {
+                    // Deselect
+                    gameState.selectedPiece = null;
+                    gameState.validMoves = [];
+                    drawBoard();
+                    updateStatus();
+                }
+            }
+        }
+
+        canvas.addEventListener('click', handleCanvasClick);
+        canvas.addEventListener('touchstart', handleCanvasClick);
+
+        // ========================================
+        // UI FUNCTIONS
+        // ========================================
+
+        function updateStatus(message) {
+            const statusBar = document.getElementById('status-bar');
+
+            if (message) {
+                statusBar.textContent = message;
+            } else if (gameState.gameOver) {
+                statusBar.textContent = `Game Over - ${gameState.winner === 'red' ? 'Red' : 'Green'} Wins!`;
+            } else {
+                const player = gameState.currentPlayer === 'red' ? 'Red' : 'Green';
+                let suffix = '';
+                if (gameState.mustCapture) {
+                    suffix = ' - MUST CAPTURE!';
+                }
+                statusBar.textContent = `${player}'s Turn${suffix}`;
+            }
+        }
+
+        function endGame(winner) {
+            gameState.gameOver = true;
+            gameState.winner = winner;
+
+            const winMessage = document.getElementById('win-message');
+            winMessage.textContent = `${winner === 'red' ? 'Red' : 'Green'} Wins!`;
+            winMessage.style.color = winner === 'red' ? COLORS.red : COLORS.green;
+
+            updateStatus();
+            showModal('win-modal');
+        }
+
+        function toggleMode() {
+            gameState.mode = gameState.mode === 'pvp' ? 'pvc' : 'pvp';
+            const btn = document.querySelector('#controls .btn-secondary');
+            btn.textContent = `Mode: ${gameState.mode === 'pvp' ? 'PvP' : 'PvC'}`;
+            newGame();
+        }
+
+        function showRules() {
+            showModal('rules-modal');
+        }
+
+        function showModal(modalId) {
+            const modal = document.getElementById(modalId);
+            modal.classList.add('show');
+        }
+
+        function closeModal(modalId) {
+            const modal = document.getElementById(modalId);
+            modal.classList.remove('show');
+        }
+
+        // Close modals when clicking outside
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.remove('show');
+                }
+            });
+        });
+
+        // ========================================
+        // INITIALIZE GAME ON LOAD
+        // ========================================
+
+        window.addEventListener('load', () => {
+            initGame();
+        });
+
+    </script>
+</body>
+</html>
