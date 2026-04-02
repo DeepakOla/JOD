@@ -170,6 +170,7 @@
         <div id="controls">
             <button class="btn" onclick="newGame()">New Game</button>
             <button class="btn btn-secondary" onclick="toggleMode()">Mode: PvP</button>
+            <button class="btn btn-secondary" onclick="toggleSound()">Sound: On</button>
             <button class="btn btn-secondary" onclick="showRules()">Rules</button>
         </div>
     </div>
@@ -246,6 +247,61 @@
 
         const canvas = document.getElementById('game-canvas');
         const ctx = canvas.getContext('2d');
+
+        // Sound System using Web Audio API
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const sounds = {
+            enabled: true,
+
+            playTone(frequency, duration, type = 'sine', volume = 0.3) {
+                if (!this.enabled) return;
+
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+
+                oscillator.frequency.value = frequency;
+                oscillator.type = type;
+
+                gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + duration);
+            },
+
+            select() {
+                this.playTone(400, 0.1, 'sine', 0.2);
+            },
+
+            move() {
+                this.playTone(500, 0.15, 'sine', 0.25);
+                setTimeout(() => this.playTone(600, 0.1, 'sine', 0.2), 50);
+            },
+
+            capture() {
+                this.playTone(300, 0.1, 'square', 0.3);
+                setTimeout(() => this.playTone(250, 0.15, 'square', 0.25), 80);
+            },
+
+            win() {
+                const notes = [523, 587, 659, 784];
+                notes.forEach((freq, i) => {
+                    setTimeout(() => this.playTone(freq, 0.3, 'sine', 0.3), i * 150);
+                });
+            },
+
+            invalid() {
+                this.playTone(200, 0.2, 'sawtooth', 0.15);
+            },
+
+            toggle() {
+                this.enabled = !this.enabled;
+                return this.enabled;
+            }
+        };
 
         const COLORS = {
             background: '#1a252f',
@@ -515,6 +571,13 @@
 
             gameState.animating = true;
 
+            // Play sound based on move type
+            if (move.type === 'capture') {
+                sounds.capture();
+            } else {
+                sounds.move();
+            }
+
             // Animate the move
             if (move.type === 'capture' && move.path) {
                 animateCaptureSequence(move, () => {
@@ -713,9 +776,11 @@
             ctx.fillStyle = COLORS.background;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Draw edges
+            // Draw edges with subtle shadow for depth
             ctx.strokeStyle = COLORS.edge;
             ctx.lineWidth = 2;
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+            ctx.shadowBlur = 3;
 
             for (let nodeId in neighbors) {
                 const pos1 = nodePositions[nodeId];
@@ -734,9 +799,21 @@
                 }
             }
 
-            // Draw nodes
+            // Reset shadow
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+
+            // Draw nodes with subtle glow
             for (let nodeId in nodePositions) {
                 const pos = nodePositions[nodeId];
+
+                // Glow effect
+                ctx.fillStyle = 'rgba(236, 240, 241, 0.1)';
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, NODE_RADIUS + 3, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Node
                 ctx.fillStyle = COLORS.node;
                 ctx.beginPath();
                 ctx.arc(pos.x, pos.y, NODE_RADIUS, 0, Math.PI * 2);
@@ -749,15 +826,18 @@
                     const pos = nodePositions[move.to];
                     const glowColor = move.type === 'capture' ? COLORS.captureGlow : COLORS.stepGlow;
 
+                    // Animated pulse effect
+                    const pulseScale = 1 + Math.sin(Date.now() / 200) * 0.1;
+
                     ctx.fillStyle = glowColor + '40';
                     ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, HIGHLIGHT_RADIUS, 0, Math.PI * 2);
+                    ctx.arc(pos.x, pos.y, HIGHLIGHT_RADIUS * pulseScale, 0, Math.PI * 2);
                     ctx.fill();
 
                     ctx.strokeStyle = glowColor;
                     ctx.lineWidth = 3;
                     ctx.beginPath();
-                    ctx.arc(pos.x, pos.y, HIGHLIGHT_RADIUS, 0, Math.PI * 2);
+                    ctx.arc(pos.x, pos.y, HIGHLIGHT_RADIUS * pulseScale, 0, Math.PI * 2);
                     ctx.stroke();
                 });
             }
@@ -765,10 +845,12 @@
             // Highlight selected piece
             if (gameState.selectedPiece) {
                 const pos = nodePositions[gameState.selectedPiece];
+                const pulseScale = 1 + Math.sin(Date.now() / 150) * 0.15;
+
                 ctx.strokeStyle = COLORS.selectedGlow;
                 ctx.lineWidth = 4;
                 ctx.beginPath();
-                ctx.arc(pos.x, pos.y, PIECE_RADIUS + 5, 0, Math.PI * 2);
+                ctx.arc(pos.x, pos.y, (PIECE_RADIUS + 5) * pulseScale, 0, Math.PI * 2);
                 ctx.stroke();
             }
 
@@ -780,10 +862,21 @@
                     drawPieceAt(pos.x, pos.y, piece);
                 }
             }
+
+            // Request animation frame for pulsing effects
+            if ((gameState.selectedPiece || gameState.validMoves.length > 0) && !gameState.gameOver) {
+                requestAnimationFrame(drawBoard);
+            }
         }
 
         function drawPieceAt(x, y, color) {
             const pieceColor = color === 'red' ? COLORS.red : COLORS.green;
+
+            // Enhanced 3D effect with shadow
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+            ctx.shadowBlur = 10;
+            ctx.shadowOffsetX = 3;
+            ctx.shadowOffsetY = 3;
 
             // Create gradient for 3D effect
             const gradient = ctx.createRadialGradient(
@@ -793,9 +886,11 @@
 
             if (color === 'red') {
                 gradient.addColorStop(0, '#ff6b6b');
+                gradient.addColorStop(0.5, '#e74c3c');
                 gradient.addColorStop(1, '#c0392b');
             } else {
                 gradient.addColorStop(0, '#55efc4');
+                gradient.addColorStop(0.5, '#2ecc71');
                 gradient.addColorStop(1, '#00b894');
             }
 
@@ -804,10 +899,29 @@
             ctx.arc(x, y, PIECE_RADIUS, 0, Math.PI * 2);
             ctx.fill();
 
-            // Add border
-            ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+            // Reset shadow
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 0;
+
+            // Add border with highlight
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
             ctx.lineWidth = 2;
             ctx.stroke();
+
+            // Add highlight for extra 3D depth
+            const highlightGradient = ctx.createRadialGradient(
+                x - PIECE_RADIUS * 0.4, y - PIECE_RADIUS * 0.4, 0,
+                x - PIECE_RADIUS * 0.4, y - PIECE_RADIUS * 0.4, PIECE_RADIUS * 0.6
+            );
+            highlightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.6)');
+            highlightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+            ctx.fillStyle = highlightGradient;
+            ctx.beginPath();
+            ctx.arc(x - PIECE_RADIUS * 0.3, y - PIECE_RADIUS * 0.3, PIECE_RADIUS * 0.5, 0, Math.PI * 2);
+            ctx.fill();
         }
 
         // ========================================
@@ -869,9 +983,11 @@
                     if (moves.length > 0) {
                         gameState.selectedPiece = nodeId;
                         gameState.validMoves = moves;
+                        sounds.select();
                         drawBoard();
                         updateStatus('Click a highlighted node to move');
                     } else {
+                        sounds.invalid();
                         updateStatus('This piece has no legal moves!');
                     }
                 }
@@ -887,8 +1003,10 @@
                     if (moves.length > 0) {
                         gameState.selectedPiece = nodeId;
                         gameState.validMoves = moves;
+                        sounds.select();
                         drawBoard();
                     } else {
+                        sounds.invalid();
                         updateStatus('This piece has no legal moves!');
                     }
                 } else {
@@ -903,6 +1021,8 @@
 
         canvas.addEventListener('click', handleCanvasClick);
         canvas.addEventListener('touchstart', handleCanvasClick);
+        canvas.addEventListener('touchend', (e) => e.preventDefault());
+        canvas.addEventListener('touchmove', (e) => e.preventDefault());
 
         // ========================================
         // UI FUNCTIONS
@@ -929,6 +1049,8 @@
             gameState.gameOver = true;
             gameState.winner = winner;
 
+            sounds.win();
+
             const winMessage = document.getElementById('win-message');
             winMessage.textContent = `${winner === 'red' ? 'Red' : 'Green'} Wins!`;
             winMessage.style.color = winner === 'red' ? COLORS.red : COLORS.green;
@@ -942,6 +1064,17 @@
             const btn = document.querySelector('#controls .btn-secondary');
             btn.textContent = `Mode: ${gameState.mode === 'pvp' ? 'PvP' : 'PvC'}`;
             newGame();
+        }
+
+        function toggleSound() {
+            const isEnabled = sounds.toggle();
+            const soundButtons = document.querySelectorAll('#controls .btn-secondary');
+            soundButtons[1].textContent = `Sound: ${isEnabled ? 'On' : 'Off'}`;
+
+            // Play a test sound when enabling
+            if (isEnabled) {
+                sounds.select();
+            }
         }
 
         function showRules() {
