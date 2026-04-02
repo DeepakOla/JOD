@@ -1197,8 +1197,8 @@
 
         function toggleSound() {
             const isEnabled = sounds.toggle();
-            const soundButtons = document.querySelectorAll('#controls .btn-secondary');
-            soundButtons[2].textContent = `Sound: ${isEnabled ? 'On' : 'Off'}`;
+            const soundButton = document.getElementById('sound-btn');
+            soundButton.textContent = `Sound: ${isEnabled ? 'On' : 'Off'}`;
 
             // Play a test sound when enabling
             if (isEnabled) {
