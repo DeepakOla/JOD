@@ -171,7 +171,7 @@
             <button class="btn" onclick="newGame()">New Game</button>
             <button class="btn btn-secondary" onclick="toggleMode()">Mode: PvP</button>
             <button class="btn btn-secondary" id="difficulty-btn" onclick="toggleDifficulty()">Difficulty: Easy</button>
-            <button class="btn btn-secondary" onclick="toggleSound()">Sound: On</button>
+            <button class="btn btn-secondary" id="sound-btn" onclick="toggleSound()">Sound: On</button>
             <button class="btn btn-secondary" onclick="showRules()">Rules</button>
         </div>
     </div>
@@ -184,8 +184,8 @@
 
             <h3>Setup</h3>
             <ul>
-                <li>Red starts at the top with 13 pieces</li>
-                <li>Green starts at the bottom with 13 pieces</li>
+                <li>Red starts at the top with 10–13 pieces depending on difficulty</li>
+                <li>Green starts at the bottom with 10–13 pieces depending on difficulty</li>
                 <li>Center position (E2) starts empty</li>
             </ul>
 
@@ -416,7 +416,7 @@
             let redStart, greenStart;
 
             if (pieceCount === 10) {
-                // Easy mode: 10 pieces (remove D row, keep only D2)
+                // Easy mode: 10 pieces per side — D row and I row removed entirely
                 redStart = ['A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3', 'E1'];
                 greenStart = ['F1', 'F2', 'F3', 'G1', 'G2', 'G3', 'H1', 'H2', 'H3', 'E3'];
             } else {
@@ -559,6 +559,34 @@
                 if (gameState.board[node] === player) {
                     const moves = getLegalMovesForPiece(node);
                     allMoves.push(...moves);
+                }
+            }
+
+            return allMoves;
+        }
+
+        // Pure move-generation for AI search: does not rely on gameState.currentPlayer / mustCapture
+        function getMustCaptureForPlayer(player) {
+            for (let node in gameState.board) {
+                if (gameState.board[node] === player) {
+                    if (getCaptureMovesForPiece(node, player).length > 0) return true;
+                }
+            }
+            return false;
+        }
+
+        function getLegalMovesForSearch(player) {
+            const allMoves = [];
+            const mustCapture = getMustCaptureForPlayer(player);
+
+            for (let node in gameState.board) {
+                if (gameState.board[node] === player) {
+                    const captures = getCaptureMovesForPiece(node, player);
+                    if (mustCapture) {
+                        allMoves.push(...captures);
+                    } else {
+                        allMoves.push(...captures, ...getStepMoves(node));
+                    }
                 }
             }
 
@@ -766,25 +794,29 @@
             const opponent = getOpponent(player);
             const currentPlayer = isMaximizing ? player : opponent;
 
-            // Terminal conditions
+            // Check terminal win/loss conditions before depth cutoff so forced
+            // wins at the horizon are scored decisively rather than heuristically.
+            const opponentPieces = countPieces(opponent);
+            const playerPieces = countPieces(player);
+
+            // Scores are always from `player`'s perspective (the AI), not from
+            // whichever side happens to be moving right now.
+            if (opponentPieces === 0) {
+                return 10000;  // player eliminated all opponent pieces
+            }
+            if (playerPieces === 0) {
+                return -10000; // player has no pieces left
+            }
+
             if (depth === 0) {
                 return evaluatePosition(player);
             }
 
-            // Check for game over
-            const opponentPieces = countPieces(opponent);
-            const playerPieces = countPieces(player);
-
-            if (opponentPieces === 0) {
-                return isMaximizing ? 10000 : -10000;
-            }
-            if (playerPieces === 0) {
-                return isMaximizing ? -10000 : 10000;
-            }
-
-            const moves = getAllLegalMoves(currentPlayer);
+            // Use pure move generation that does not read global gameState fields
+            const moves = getLegalMovesForSearch(currentPlayer);
             if (moves.length === 0) {
-                // Current player has no moves - loses
+                // Current side has no moves – that side loses.
+                // If it is the maximising player's turn → -10000; minimising → +10000.
                 return isMaximizing ? -10000 : 10000;
             }
 
@@ -841,9 +873,10 @@
             const oppPieces = countPieces(opponent);
             score += (myPieces - oppPieces) * 100;
 
-            // 2. Mobility (more moves = better)
-            const myMoves = getAllLegalMoves(player).length;
-            const oppMoves = getAllLegalMoves(opponent).length;
+            // 2. Mobility (more moves = better) — use pure helper to avoid
+            //    stale gameState.currentPlayer / mustCapture during search
+            const myMoves = getLegalMovesForSearch(player).length;
+            const oppMoves = getLegalMovesForSearch(opponent).length;
             score += (myMoves - oppMoves) * 10;
 
             // 3. Center control
@@ -878,9 +911,19 @@
             );
             score -= distToCenter * 0.05;
 
-            // Count potential captures from this position
-            const captures = getCaptureMovesForPiece(nodeId, player);
-            score += captures.length * 5;
+            // Cheap immediate-capture potential check (avoids costly full
+            // sequence traversal inside evaluatePosition at every node)
+            const opponent = getOpponent(player);
+            for (let middleNode of neighbors[nodeId]) {
+                if (getPieceAt(middleNode) === opponent) {
+                    for (let landingNode of neighbors[middleNode]) {
+                        if (landingNode !== nodeId && getPieceAt(landingNode) === null) {
+                            score += 5;
+                            break;
+                        }
+                    }
+                }
+            }
 
             return score;
         }
@@ -1185,6 +1228,10 @@
         }
 
         function toggleDifficulty() {
+            // Prevent changing difficulty while an animation is in progress to
+            // avoid stale animation callbacks corrupting the new board state.
+            if (gameState.animating) return;
+
             const currentIndex = DIFFICULTY_ORDER.indexOf(gameState.difficulty);
             const nextIndex = (currentIndex + 1) % DIFFICULTY_ORDER.length;
             gameState.difficulty = DIFFICULTY_ORDER[nextIndex];
